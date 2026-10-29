@@ -22,7 +22,7 @@ npm install
 
 ### Lancement des tests automatisés
 ```bash
-# Exécution unique des tests Vitest
+# Exécution de l'ensemble des 127 tests Vitest
 npm test
 
 # Vérification stricte du typage TypeScript
@@ -30,7 +30,7 @@ npm run typecheck
 ```
 
 ### Vérification de l'indépendance de fuseau horaire
-Toutes les règles temporelles opèrent en heure civile béninoise (UTC+1, WAT). Les tests passent avec succès quel que soit le fuseau horaire de la machine :
+Toutes les règles temporelles opèrent en heure civile béninoise (UTC+1, WAT). Les 127 tests passent avec succès quel que soit le fuseau horaire de la machine :
 
 - **Sous Linux / macOS / Bash :**
   ```bash
@@ -47,10 +47,11 @@ Toutes les règles temporelles opèrent en heure civile béninoise (UTC+1, WAT).
   ```
 
 ### Exécution des requêtes SQL d'impact
-La base PostgreSQL est déjà configurée dans pgAdmin sous le nom `rdv_tma`. Vous pouvez exécuter le fichier `requetes.sql` avec `psql` :
+La base PostgreSQL est configurée dans pgAdmin sous le nom `rdv_tma`. Vous pouvez exécuter le fichier `requetes.sql` avec `psql` :
 ```bash
 psql -U postgres -d rdv_tma -f requetes.sql
 ```
+*(Le fichier `base_rendez_vous.sql` à la racine est 100% compatible PostgreSQL, SQLite et MySQL, et peut être chargé dans pgAdmin 4 via le Query Tool).*
 
 ---
 
@@ -60,7 +61,7 @@ Le module est structuré sous forme de fonctions pures sans état mutable :
 
 ```
 tma-rdv/
-├── base_rendez_vous.sql   # Export SQL initial (vendredi 20 novembre 2026 à 18h00)
+├── base_rendez_vous.sql   # Export SQL initial universel (compatible PostgreSQL, SQLite, MySQL)
 ├── requetes.sql           # Requêtes SQL d'impact PostgreSQL (+ équivalents SQLite/MySQL)
 ├── src/
 │   ├── types.ts           # Types TypeScript stricts et dictionnaire MESSAGES immuable
@@ -68,12 +69,13 @@ tma-rdv/
 │   ├── regles.ts          # Fonctions de validation métier pures (prise, annulation, clôture, tri)
 │   └── index.ts           # Point d'entrée public réexportant l'ensemble de l'API
 └── tests/
-    ├── temps.test.ts      # Tests unitaires du référentiel temporel béninois
-    ├── prise_rdv.test.ts  # Tests de prise de rendez-vous (ordre des contrôles, validations)
-    ├── statuts.test.ts    # Tests d'annulation (délai 24 h) et changements de statut
-    ├── liste_usager.test.ts # Tests de tri ("prochain rendez-vous en tête") et pagination
-    ├── regles.test.ts     # Rejeu fidèle des tickets TMA-101 à TMA-107 + tests de bornes
-    └── bonus.test.ts      # Tests des anomalies cachées détectées et outil d'audit TMA
+    ├── temps.test.ts          # Tests unitaires du référentiel temporel béninois (11 tests)
+    ├── prise_rdv.test.ts      # Tests de prise de rendez-vous (11 tests)
+    ├── statuts.test.ts        # Tests d'annulation (délai 24 h) et changements de statut (7 tests)
+    ├── liste_usager.test.ts   # Tests de tri ("prochain rendez-vous en tête") et pagination (4 tests)
+    ├── regles.test.ts         # Rejeu fidèle des tickets TMA-101 à TMA-107 + tests de bornes (27 tests)
+    ├── bonus.test.ts          # Tests des anomalies cachées détectées et outil d'audit TMA (12 tests)
+    └── audit_exhaustif.test.ts # Audit strict caractère par caractère des messages et cas limites (55 tests)
 ```
 
 ### Signatures publiques et exemples d'utilisation
@@ -136,7 +138,7 @@ Inspecte un enregistrement existant en base et retourne les anomalies de structu
 ## 3. Hypothèses et interprétations
 
 1. **Référentiel temporel et piège de fuseau :**
-   Le Bénin applique l'heure d'Afrique de l'Ouest (WAT, UTC+1) toute l'année, sans heure d'été. Pour garantir l'absence de régression liée au fuseau horaire de la machine (ex: UTC, New York, Tokyo), le parser décompose les chaînes ISO et manipule une heure murale via `Date.UTC` et les accesseurs `getUTC*`. Un objet `Date` natif JavaScript passé en paramètre est interprété comme un instant absolu et décalé de `+1 heure` pour correspondre à l'heure civile béninoise.
+   Le Bénin applique l'heure d'Afrique de l'Ouest (WAT, UTC+1) toute l'année, sans heure d'été. Pour garantir l'absence de régression liée au fuseau horaire de la machine hôte (ex: UTC, New York, Tokyo), le parser décompose les chaînes ISO et manipule une heure murale via `Date.UTC` et les accesseurs `getUTC*`. Un objet `Date` natif JavaScript passé en paramètre est interprété comme un instant absolu et décalé de `+1 heure` pour correspondre à l'heure civile béninoise.
 2. **Date de référence (`now`) :**
    Conformément aux instructions, `now` est obligatoirement fourni en paramètre aux fonctions. Aucun appel direct à `Date.now()` ou `new Date()` sans argument n'est présent dans le code métier.
 3. **Égalité temporelle stricte (`creneau == now`) :**
@@ -176,49 +178,49 @@ Inspecte un enregistrement existant en base et retourne les anomalies de structu
 - **Citation de la règle :** *« Centre ouvert du lundi au vendredi, créneaux de 30 min, de 08:00 à 15:30. »*
 - **Cause probable :** Le code d'origine vérifiait uniquement l'heure de la journée sans contrôler le jour calendaire de la semaine. Le 14 novembre 2026 étant un samedi, la requête n'aurait jamais dû être acceptée.
 - **Correction :** Dans `src/regles.ts` (étape 5 du contrôle), la fonction `estWeekend(creneau)` identifie le samedi (`jourSemaine === 6`) et le dimanche (`jourSemaine === 0`) et renvoie un statut HTTP 409 avec le message exact : `"Le centre est fermé le week-end."`.
-- **Test associé :** `tests/regles.test.ts` (suite TMA-101), rejouant la réservation du 14/11/2026 à 10:00.
+- **Test associé :** `tests/regles.test.ts` (suite `TMA-101 : Rejet d'un créneau le week-end (samedi 14 novembre 2026)`), rejouant la réservation du 14/11/2026 à 10:00.
 
 ### TMA-102 : Capacité maximale de 3 usagers par créneau
 - **Qualification :** **ANOMALIE**.
 - **Citation de la règle :** *« Un créneau accueille au plus 3 usagers (statuts non annulés : confirme, honore, absent). Un rendez-vous annulé libère sa place. »*
 - **Cause probable :** Utilisation d'un opérateur strict `>` au lieu de `>=` dans la condition (`count > 3`), ou condition de concurrence (race condition) entre deux réservations simultanées.
 - **Correction :** Comptabilisation stricte des rendez-vous au même créneau dont le statut est différent de `annule`. Dès que `nbNonAnnules >= 3`, la demande est refusée avec le code 409 et le message exact : `"Ce créneau est complet."`. Si l'un des trois est `annule`, la demande est acceptée.
-- **Test associé :** `tests/regles.test.ts` (suite TMA-102), rejouant les 3 rendez-vous existants (632, 644, 681) et le refus du 4e (697).
+- **Test associé :** `tests/regles.test.ts` (suite `TMA-102 : Capacité maximale de 3 usagers par créneau (2026-11-10T09:00)`), rejouant les 3 rendez-vous existants (632, 644, 681) et le refus du 4e (697).
 
 ### TMA-103 : Validation robuste du NPI
 - **Qualification :** **ANOMALIE**.
 - **Citation de la règle :** *« NPI : exactement 10 chiffres (chaîne, zéros initiaux conservés). »* et message attendu : `400 "Le NPI doit comporter exactement 10 chiffres."`
 - **Cause probable :** Tentative de conversion en entier (ex: `parseInt` ou cast PostgreSQL `INTEGER`), provoquant un dépassement de capacité ou une exception SQL non capturée se traduisant par une erreur 500.
 - **Correction :** Validation préalable par une expression régulière stricte `/^\d{10}$/` et vérification du type chaîne de caractères. Tout format erroné renvoie proprement une erreur HTTP 400 sans lever d'exception.
-- **Test associé :** `tests/regles.test.ts` (suite TMA-103), testant `"06142A3647"`, 9 chiffres, 11 chiffres, chaîne vide, espaces et types non-string.
+- **Test associé :** `tests/regles.test.ts` (suite `TMA-103 : Validation robuste du NPI (rejet 400 sans erreur interne)`), testant `"06142A3647"`, 9 chiffres, 11 chiffres, chaîne vide, espaces et types non-string.
 
 ### TMA-104 : Délai d'annulation de 24 h
 - **Qualification :** **ANOMALIE**.
 - **Citation de la règle :** *« Annulation par l'usager possible jusqu'à 24 h avant l'heure prévue (exactement 24 h pile = autorisé). »*
 - **Cause probable :** Comparaison basée sur les seuls jours calendaires (`date_rdv - date_now`), ou comparaison des heures de la journée sans tenir compte de la date complète, ou décalage de fuseau horaire.
 - **Correction :** Calcul exact de la différence en minutes entre les horodatages UTC de l'heure murale : `differenceMinutes(rdv, now) >= 1440`. À 40 h comme à 24 h pile, l'annulation est autorisée. À moins de 24 h (1439 min), elle est refusée avec le code 409 et le message exact : `"Annulation impossible moins de 24 h avant le rendez-vous."`.
-- **Test associé :** `tests/regles.test.ts` (suite TMA-104), testant le rendez-vous 709 à 40 h d'avance, à 24 h pile et à 23 h 59.
+- **Test associé :** `tests/regles.test.ts` (suite `TMA-104 : Délai d'annulation de 24 h (rendez-vous 709)`), testant le rendez-vous 709 à 40 h d'avance, à 24 h pile et à 23 h 59.
 
 ### TMA-105 : Protection des statuts définitifs
 - **Qualification :** **ANOMALIE**.
 - **Citation de la règle :** *« confirme → honore \| absent \| annule. Ces trois statuts sont définitifs. »*
 - **Cause probable :** La route de mise à jour mettait à jour le statut en base sans vérifier l'état courant de l'enregistrement.
 - **Correction :** Dans `verifierChangementStatut`, si `rendezVous.statut !== "confirme"`, la transition est systématiquement rejetée avec le code HTTP 409 et le message exact : `"Ce rendez-vous est déjà clôturé."`.
-- **Test associé :** `tests/regles.test.ts` (suite TMA-105), tentant de passer le rendez-vous 292 de `annule` à `honore`.
+- **Test associé :** `tests/regles.test.ts` (suite `TMA-105 : Protection des statuts définitifs (rendez-vous 292)`), tentant de passer le rendez-vous 292 de `annule` à `honore`.
 
 ### TMA-106 : Tri métier et pagination
 - **Qualification :** **ANOMALIE**.
 - **Citation de la règle :** *« Liste des rendez-vous d'un usager : du plus récent au plus ancien, le prochain rendez-vous en tête, pages de 10. »*
 - **Cause probable :** Application d'une clause `LIMIT 10 OFFSET 0` directement sur la table sans tri préalable, ou pagination effectuée avant la séparation du prochain rendez-vous.
 - **Correction :** La fonction `listerRendezVousUsager` filtre par NPI, extrait le prochain rendez-vous confirmé à venir pour le placer à l'index 0, trie tous les autres rendez-vous par date/heure décroissante (avec départage par id décroissant), et découpe enfin en pages de 10.
-- **Test associé :** `tests/regles.test.ts` (suite TMA-106), rejouant les 13 rendez-vous réels de l'usager `0203040506`. Le rendez-vous 826 est bien en tête, la page 1 compte 10 éléments et la page 2 compte 3 éléments.
+- **Test associé :** `tests/regles.test.ts` (suite `TMA-106 : Tri et pagination des 13 rendez-vous de l'usager 0203040506`), rejouant les 13 rendez-vous réels de l'usager `0203040506`. Le rendez-vous 826 est bien en tête, la page 1 compte 10 éléments et la page 2 compte 3 éléments.
 
 ### TMA-107 : Unicité du rendez-vous à venir (cas conforme)
 - **Qualification :** **CONFORME (PIÈGE)**.
 - **Citation de la règle :** *« Un usager ne peut avoir qu'un seul rendez-vous À VENIR, tous services confondus. »*
 - **Cause :** Il ne s'agit pas d'un bogue mais d'un comportement conforme aux spécifications. L'usager `0102030405` disposant déjà du rendez-vous 800 confirmé le 26/11, sa demande pour le service `PERMIS` le 27/11 devait impérativement être rejetée.
 - **Correction :** Aucune modification. Le comportement a été scrupuleusement maintenu (rejet 409 `"Vous avez déjà un rendez-vous à venir."`). Un test complémentaire vérifie que les rendez-vous confirmés mais passés ne bloquent pas une nouvelle prise.
-- **Test associé :** `tests/regles.test.ts` (suite TMA-107).
+- **Test associé :** `tests/regles.test.ts` (suite `TMA-107 : Un seul rendez-vous à venir (cas conforme et piège)`).
 
 ---
 
@@ -322,7 +324,7 @@ Au-delà des tickets déclarés, un audit complet de la base a permis d'isoler 5
 ### Ce qui fonctionne parfaitement
 - **Conformité stricte :** 100% des règles de gestion, codes HTTP et messages au caractère près sont respectés.
 - **Indépendance environnementale :** 0 dépendance d'exécution, isolation des fuseaux horaires (résultats identiques sous UTC, New York, Tokyo).
-- **Couverture de tests exhaustive :** 72 tests automatisés (Vitest) couvrant chaque ticket, les bornes limites et les cas d'anomalies de base.
+- **Couverture de tests exhaustive :** 127 tests automatisés (Vitest) couvrant chaque ticket, les bornes limites et les cas d'anomalies de base.
 - **Traçabilité SQL complète :** Requêtes PostgreSQL prêtes à l'emploi avec équivalences SQLite/MySQL documentées.
 
 ### Ce qui manque et pourquoi
