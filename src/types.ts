@@ -33,6 +33,12 @@ export interface PageRendezVous {
   rendezVous: RendezVous[];
 }
 
+export interface AnomalieDetection {
+  champ: string;
+  valeur: unknown;
+  description: string;
+}
+
 /**
  * Messages d'erreur officiels au caractère près (code HTTP, texte avec ponctuation et accents).
  */

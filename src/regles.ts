@@ -10,6 +10,7 @@ import {
   RendezVous,
   ResultatRegle,
   PageRendezVous,
+  AnomalieDetection,
   MESSAGES,
   SERVICES_AUTORISES,
   STATUTS_CLOTURE_AUTORISES,
@@ -278,4 +279,73 @@ export function listerRendezVousUsager(
     totalPages,
     rendezVous: pageItems,
   };
+}
+
+/**
+ * Fonction d'audit TMA permettant de vérifier la conformité structurelle
+ * d'un enregistrement de rendez-vous existant en base.
+ *
+ * Détecte les anomalies de données : NPI invalide, service non reconnu,
+ * rendez-vous sur un week-end, horaire hors grille, ou statut inattendu.
+ *
+ * @param rdv Le rendez-vous à inspecter
+ * @returns Liste des anomalies détectées (vide si l'enregistrement est conforme)
+ */
+export function auditerConformiteRendezVous(rdv: RendezVous): AnomalieDetection[] {
+  const anomalies: AnomalieDetection[] = [];
+
+  // 1. Contrôle NPI
+  if (typeof rdv.npi !== "string" || !REGEX_NPI_STRICT.test(rdv.npi)) {
+    anomalies.push({
+      champ: "npi",
+      valeur: rdv.npi,
+      description: "Le NPI ne comporte pas exactement 10 chiffres décimaux",
+    });
+  }
+
+  // 2. Contrôle Service
+  if (typeof rdv.service !== "string" || !SERVICES_AUTORISES.has(rdv.service)) {
+    anomalies.push({
+      champ: "service",
+      valeur: rdv.service,
+      description: "Service non reconnu dans la grille officielle (PASSEPORT, CNI, PERMIS)",
+    });
+  }
+
+  // 3. Contrôle Date/Heure
+  const parsed = parserDateHeureBenin(rdv.dateHeure, false);
+  if (!parsed) {
+    anomalies.push({
+      champ: "dateHeure",
+      valeur: rdv.dateHeure,
+      description: "Format ou validité calendaire de la date invalide",
+    });
+  } else {
+    if (estWeekend(parsed)) {
+      anomalies.push({
+        champ: "dateHeure",
+        valeur: rdv.dateHeure,
+        description: "Rendez-vous programmé un jour de week-end (centre fermé)",
+      });
+    }
+    if (!estCreneauGrilleValide(parsed)) {
+      anomalies.push({
+        champ: "dateHeure",
+        valeur: rdv.dateHeure,
+        description: "Horaire hors grille de réservation (08:00 à 15:30 par pas de 30 min)",
+      });
+    }
+  }
+
+  // 4. Contrôle Statut
+  const statutsConnus = new Set(["confirme", "honore", "absent", "annule"]);
+  if (typeof rdv.statut !== "string" || !statutsConnus.has(rdv.statut)) {
+    anomalies.push({
+      champ: "statut",
+      valeur: rdv.statut,
+      description: "Statut métier non reconnu",
+    });
+  }
+
+  return anomalies;
 }
