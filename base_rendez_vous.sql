@@ -1,8 +1,8 @@
 -- Export de la base « Rendez-vous au guichet », vendredi 20 novembre 2026 à 18 h 00 (heure du Bénin).
 -- Compatible PostgreSQL, MySQL et SQLite. Toutes les dates sont à l'heure du Bénin (UTC+1).
 
-DROP TABLE IF EXISTS historique_statuts;
-DROP TABLE IF EXISTS rendez_vous;
+DROP TABLE IF EXISTS historique_statuts CASCADE;
+DROP TABLE IF EXISTS rendez_vous CASCADE;
 
 CREATE TABLE rendez_vous (
   id INTEGER PRIMARY KEY,
