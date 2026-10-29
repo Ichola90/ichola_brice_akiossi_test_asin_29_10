@@ -1,15 +1,17 @@
 {
   "name": "tma-rdv",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Module de validation et règles de gestion des rendez-vous au guichet (ASIN Bénin)",
+  "type": "module",
+  "main": "src/index.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
-  "author": "",
+  "author": "Ichola Brice Akiossi",
   "license": "ISC",
-  "type": "commonjs",
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.20.5",
     "typescript": "^7.0.2",
