@@ -3,6 +3,7 @@ import {
   parserDateHeureBenin,
   estWeekend,
   estCreneauGrilleValide,
+  differenceMinutes,
 } from "./temps.js";
 import {
   DemandePriseRendezVous,
@@ -10,6 +11,7 @@ import {
   ResultatRegle,
   MESSAGES,
   SERVICES_AUTORISES,
+  STATUTS_CLOTURE_AUTORISES,
 } from "./types.js";
 
 const REGEX_NPI_STRICT = /^\d{10}$/;
@@ -104,6 +106,82 @@ export function verifierPriseRendezVous(
         return { ok: false, status: 409, message: MESSAGES.CRENEAU_COMPLET };
       }
     }
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Valide la demande d'annulation d'un rendez-vous par l'usager.
+ *
+ * Règles :
+ * 1. Le rendez-vous doit être au statut 'confirme'. S'il est 'honore', 'absent' ou déjà 'annule',
+ *    il ne peut plus être annulé (409).
+ * 2. L'annulation doit être demandée au moins 24 h avant l'heure prévue du rendez-vous (409).
+ *    Exactement 24 h pile (1440 min) est autorisé.
+ *
+ * @param rendezVous Le rendez-vous à annuler
+ * @param now Horodatage au moment de la demande d'annulation
+ */
+export function verifierAnnulation(
+  rendezVous: RendezVous | null | undefined,
+  now: string | Date
+): ResultatRegle {
+  if (!rendezVous || typeof rendezVous !== "object") {
+    return { ok: false, status: 400, message: MESSAGES.ANNULATION_NON_CONFIRME };
+  }
+
+  // 1. Contrôle du statut courant
+  if (rendezVous.statut !== "confirme") {
+    return { ok: false, status: 409, message: MESSAGES.ANNULATION_NON_CONFIRME };
+  }
+
+  // 2. Contrôle du délai d'annulation (>= 24 h)
+  const rdvDate = parserDateHeureBenin(rendezVous.dateHeure, false);
+  const nowDate = parserDateHeureBenin(now, false);
+
+  if (!rdvDate || !nowDate) {
+    return { ok: false, status: 400, message: MESSAGES.DATE_INVALIDE };
+  }
+
+  const minutesRestantes = differenceMinutes(rdvDate, nowDate);
+  const SEUIL_24_HEURES_MINUTES = 24 * 60; // 1440 minutes
+
+  if (minutesRestantes < SEUIL_24_HEURES_MINUTES) {
+    return { ok: false, status: 409, message: MESSAGES.ANNULATION_TARDIVE };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Valide le changement de statut d'un rendez-vous au guichet par un agent.
+ *
+ * Règles :
+ * 1. Le statut demandé doit être strictement 'honore' ou 'absent' (400).
+ *    Les statuts 'annule', 'confirme', valeurs vides ou inattendues sont rejetés.
+ * 2. Transition autorisée uniquement depuis 'confirme'. Si le rendez-vous est déjà
+ *    clôturé ('honore', 'absent', 'annule'), la modification est refusée (409).
+ *
+ * @param rendezVous Le rendez-vous concerné
+ * @param statutDemande Nouveau statut demandé
+ */
+export function verifierChangementStatut(
+  rendezVous: RendezVous | null | undefined,
+  statutDemande: unknown
+): ResultatRegle {
+  // 1. Contrôle du statut demandé
+  if (typeof statutDemande !== "string" || !STATUTS_CLOTURE_AUTORISES.has(statutDemande)) {
+    return { ok: false, status: 400, message: MESSAGES.STATUT_INCONNU };
+  }
+
+  if (!rendezVous || typeof rendezVous !== "object") {
+    return { ok: false, status: 400, message: MESSAGES.DEJA_CLOTURE };
+  }
+
+  // 2. Contrôle de l'état courant : seuls les rendez-vous "confirme" peuvent être clôturés
+  if (rendezVous.statut !== "confirme") {
+    return { ok: false, status: 409, message: MESSAGES.DEJA_CLOTURE };
   }
 
   return { ok: true };
