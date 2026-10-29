@@ -152,7 +152,11 @@ describe("ÉTAPE 4 : Audit approfondi des règles et cas limites", () => {
         "2026-11-20T18:00"
       );
       // 18:00 est hors grille, donc doit échouer sur grille mais PAS sur week-end
-      expect(res.message).toBe(MESSAGES.HORS_GRILLE);
+      expect(res).toEqual({
+        ok: false,
+        status: 409,
+        message: MESSAGES.HORS_GRILLE,
+      });
     });
 
     it("accepte le vendredi ouvré dans la grille et le lundi ouvré", () => {
