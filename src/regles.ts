@@ -9,6 +9,7 @@ import {
   DemandePriseRendezVous,
   RendezVous,
   ResultatRegle,
+  PageRendezVous,
   MESSAGES,
   SERVICES_AUTORISES,
   STATUTS_CLOTURE_AUTORISES,
@@ -185,4 +186,96 @@ export function verifierChangementStatut(
   }
 
   return { ok: true };
+}
+
+/**
+ * Liste, ordonne et pagine les rendez-vous d'un usager selon les spécifications métier ASIN :
+ * 1. Filtrage sur le NPI
+ * 2. Tri métier :
+ *    - Le prochain rendez-vous (statut "confirme" et date_heure >= now, le plus proche) en tête absolue
+ *    - Tous les autres rendez-vous ordonnés par date_heure décroissante (départage par id décroissant)
+ * 3. Découpage en pages (par défaut 10 éléments par page)
+ *
+ * @param rendezVous Liste de tous les rendez-vous
+ * @param npi Identifiant NPI de l'usager
+ * @param now Date de référence
+ * @param page Numéro de page (1-indexé)
+ * @param parPage Taille de la page
+ * @returns PageRendezVous { page, parPage, total, totalPages, rendezVous }
+ */
+export function listerRendezVousUsager(
+  rendezVous: RendezVous[],
+  npi: string,
+  now: string | Date,
+  page = 1,
+  parPage = 10
+): PageRendezVous {
+  const p = typeof page === "number" && !isNaN(page) && page >= 1 ? Math.floor(page) : 1;
+  const limit = typeof parPage === "number" && !isNaN(parPage) && parPage >= 1 ? Math.floor(parPage) : 10;
+
+  const nowBenin = parserDateHeureBenin(now, false);
+  const nowMs = nowBenin ? nowBenin.timestampMs : 0;
+
+  // 1. Filtrage strict sur le NPI
+  const usagerRdv = rendezVous.filter((r) => r.npi === npi);
+  const total = usagerRdv.length;
+  const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+  // 2. Recherche du prochain rendez-vous (confirmé à venir, le plus proche dans le temps)
+  let prochainRdv: RendezVous | null = null;
+  let prochainRdvMs = Infinity;
+
+  for (const rdv of usagerRdv) {
+    if (rdv.statut === "confirme") {
+      const parsed = parserDateHeureBenin(rdv.dateHeure, false);
+      if (parsed && parsed.timestampMs >= nowMs) {
+        if (parsed.timestampMs < prochainRdvMs) {
+          prochainRdvMs = parsed.timestampMs;
+          prochainRdv = rdv;
+        } else if (parsed.timestampMs === prochainRdvMs && prochainRdv && rdv.id < prochainRdv.id) {
+          // Départage déterministe
+          prochainRdv = rdv;
+        }
+      }
+    }
+  }
+
+  // 3. Séparation et tri des autres rendez-vous par date_heure décroissante (départage id décroissant)
+  const autresRdv = usagerRdv.filter((r) => r !== prochainRdv);
+
+  autresRdv.sort((a, b) => {
+    const da = parserDateHeureBenin(a.dateHeure, false)?.timestampMs ?? 0;
+    const db = parserDateHeureBenin(b.dateHeure, false)?.timestampMs ?? 0;
+    if (db !== da) {
+      return db - da; // Décroissant par date
+    }
+    return b.id - a.id; // Départage par id décroissant
+  });
+
+  const listeOrdonnee: RendezVous[] = prochainRdv
+    ? [prochainRdv, ...autresRdv]
+    : autresRdv;
+
+  // 4. Découpage en pages (pagination)
+  if (p > totalPages || total === 0) {
+    return {
+      page: p,
+      parPage: limit,
+      total,
+      totalPages,
+      rendezVous: [],
+    };
+  }
+
+  const debut = (p - 1) * limit;
+  const fin = debut + limit;
+  const pageItems = listeOrdonnee.slice(debut, fin);
+
+  return {
+    page: p,
+    parPage: limit,
+    total,
+    totalPages,
+    rendezVous: pageItems,
+  };
 }
